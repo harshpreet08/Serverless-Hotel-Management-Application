@@ -1,0 +1,114 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CloudFormation template for Lambda functions, SQS, SNS, and DynamoDB"
+Resources:
+  LambdaFunction1:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "requestBooking"
+      Handler: "requestBooking.lambda_handler"
+      Architectures:
+        - "x86_64"
+      Code:
+        S3Bucket: "dal-vacation-sdp-23-assets"
+        S3Key: "lambda-code/requestBooking.zip"
+      MemorySize: 128
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_NAME: !Ref DynamoDBTable2
+          SNS_TOPIC_ARN: !Ref SNSTopic
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      Runtime: "python3.12"
+      Timeout: 30
+      EphemeralStorage:
+        Size: 512
+
+  LambdaFunction2:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "approveBooking"
+      Handler: "approveBooking.lambda_handler"
+      Architectures:
+        - "x86_64"
+      Code:
+        S3Bucket: "dal-vacation-sdp-23-assets"
+        S3Key: "lambda-code/approveBooking.zip"
+      MemorySize: 128
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_NAME: !Ref DynamoDBTable2
+          SNS_TOPIC_ARN: !Ref SNSTopic
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      Runtime: "python3.12"
+      Timeout: 30
+      EphemeralStorage:
+        Size: 512
+      Events:
+        SQSTrigger:
+          Type: "SQS"
+          Properties:
+            Queue: !GetAtt SQSQueue.Arn
+
+  LambdaFunction3:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "getProperties"
+      Handler: "getProperties.lambda_handler"
+      Architectures:
+        - "x86_64"
+      Code:
+        S3Bucket: "dal-vacation-sdp-23-assets"
+        S3Key: "lambda-code/getProperties.zip"
+      MemorySize: 128
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_NAME: !Ref DynamoDBTable
+          SNS_TOPIC_ARN: !Ref SNSTopic
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      Runtime: "python3.12"
+      Timeout: 30
+      EphemeralStorage:
+        Size: 512
+
+  SQSQueue:
+    Type: "AWS::SQS::Queue"
+    Properties:
+      DelaySeconds: "0"
+      MaximumMessageSize: "262144"
+      MessageRetentionPeriod: "345600"
+      ReceiveMessageWaitTimeSeconds: "0"
+      VisibilityTimeout: "30"
+      QueueName: "BookingRequestQueue"
+
+  SNSTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: "DAL Vacation Home Notifications"
+      TopicName: "DALVacationHomeNotifications"
+
+  DynamoDBTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: "property_id"
+          AttributeType: "S"
+      TableName: "Property"
+      KeySchema:
+        - AttributeName: "property_id"
+          KeyType: "HASH"
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+
+  DynamoDBTable2:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: "booking_id"
+          AttributeType: "S"
+      TableName: "GuestRoomBookings"
+      KeySchema:
+        - AttributeName: "booking_id"
+          KeyType: "HASH"
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1

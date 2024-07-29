@@ -1,0 +1,559 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - 
+        Label: 
+          default: "Cognito User Pool Configuration"
+        Parameters: 
+          - CognitoUserPoolName
+          - CognitoClientName
+          - CognitoCallbackURLs
+          - CognitoLogoutURLs
+          - CognitoDomainName
+      - 
+        Label: 
+          default: "S3 Assets Configuration"
+        Parameters: 
+          - S3AssetBucket
+          - ValidateTokenLambdaS3Key
+          - GetSecurityQuestionsLambdaS3Key
+          - ValidateCaesarCipherLambdaS3Key
+          - GenerateCaesarCipherLambdaS3Key
+          - VerifySecurityQuestionsS3Key
+          - UserRegistrationS3Key
+          - ConfirmUserS3Key
+          - LambdaLayerS3Key
+      - 
+        Label: 
+          default: "Other Resources"
+        Parameters: 
+          - LabRoleArn
+          - SNSTopicARN
+          - DynamoDBTableName
+
+
+Parameters:
+  CognitoUserPoolName:
+    Description: Enter the name of the User Identity Pool
+    Type: String
+    Default: DalVacationHome
+  CognitoClientName:
+    Description: Enter the name of the User Identity Pool Client
+    Type: String
+    Default: DalVacationHomeClient
+  CognitoCallbackURLs: 
+    Description: "Comma-delimited list of Callback URLs added to Cognito Client"
+    Type: CommaDelimitedList
+    Default: "http://localhost:3000/security-questions, https://dal-vacation-home-sdp-23.netlify.app/security-questions"   
+  CognitoLogoutURLs: 
+    Description: "Comma-delimited list of Callback URLs added to Cognito Client"
+    Type: CommaDelimitedList
+    Default: "http://localhost:3000, https://dal-vacation-home-sdp-23.netlify.app"
+  CognitoDomainName:
+    Description: Enter the Domain name of the Cognito Client
+    Type: String
+    Default: "dalhome-final-sdp-23"     
+
+
+  S3AssetBucket:
+    Description: Name of the S3 bucket that include lambda function code and layer
+    Type: String
+    Default: "dal-vacation-sdp-23-assets"
+
+  # S3BucketLambdaFunctionPrefix:
+  #   Description: S3 bucket Lambda function prefix
+  #   Type: String
+  #   Default: "lambda-code/"
+
+  ValidateTokenLambdaS3Key:
+    Description: Validate Token lambda function S3 Key
+    Type: String
+    Default: "lambda-code/validateToken.zip"
+
+  GetSecurityQuestionsLambdaS3Key:
+    Description: Get Security Questions lambda function S3 Key
+    Type: String
+    Default: "lambda-code/getSecurityQuestions.zip"
+
+  ValidateCaesarCipherLambdaS3Key:
+    Description: lambda function S3 Key
+    Type: String
+    Default: "lambda-code/validateCaesarCipher.zip"
+
+  GenerateCaesarCipherLambdaS3Key:
+    Description: lambda function S3 Key
+    Type: String
+    Default: "lambda-code/generateCaesarCipher.zip"
+
+  VerifySecurityQuestionsS3Key:
+    Description: lambda function S3 Key
+    Type: String
+    Default: "lambda-code/validateSecurityQuestions.zip"
+
+  UserRegistrationS3Key:
+    Description: lambda function S3 Key
+    Type: String
+    Default: "lambda-code/userRegistration.zip"
+
+  ConfirmUserS3Key:
+    Description: lambda function S3 Key
+    Type: String
+    Default: "lambda-code/cognitoUserConfirmation.zip"
+
+  LambdaLayerS3Key:
+    Description: lambda function S3 Key
+    Type: String
+    Default: "lambda-layer/python-jwt-request-crypto.zip"
+
+  LabRoleArn:
+    Description: Validate Token lambda function S3 Key
+    Type: String
+    Default: "arn:aws:iam::452633565221:role/LabRole" 
+
+  SNSTopicARN:
+    Description: SNS Topic for notifications
+    Type: String
+    Default: "arn:aws:sns:us-east-1:452633565221:DALVacationHomeNotifications" 
+
+  DynamoDBTableName:
+    Description: Dynamo DB Table Name
+    Type: String
+    Default: "Users"
+
+Resources:
+  CognitoUserPool:
+    Type: "AWS::Cognito::UserPool"
+    Properties:
+      UserPoolName: !Ref CognitoUserPoolName
+      Policies: 
+        PasswordPolicy: 
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: 7
+      Schema: 
+      - 
+        Name: "sub"
+        AttributeDataType: "String"
+        DeveloperOnlyAttribute: false
+        Mutable: false
+        Required: true
+        StringAttributeConstraints: 
+          MinLength: "1"
+          MaxLength: "2048"
+      - 
+        Name: "email"
+        AttributeDataType: "String"
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: true
+        StringAttributeConstraints: 
+          MinLength: "0"
+          MaxLength: "2048"
+      MfaConfiguration: "OFF"
+      EmailConfiguration: 
+        EmailSendingAccount: "COGNITO_DEFAULT"
+      AdminCreateUserConfig: 
+        AllowAdminCreateUserOnly: false
+      AccountRecoverySetting: 
+        RecoveryMechanisms: 
+        - 
+          Priority: 1
+          Name: "verified_email"
+      UsernameConfiguration: 
+        CaseSensitive: false
+      VerificationMessageTemplate: 
+        DefaultEmailOption: "CONFIRM_WITH_CODE"
+
+  CognitoUserPoolClient:
+    Type: "AWS::Cognito::UserPoolClient"
+    Properties:
+      UserPoolId: !Ref CognitoUserPool
+      ClientName: !Ref CognitoClientName
+      RefreshTokenValidity: 30
+      ExplicitAuthFlows: 
+      - "ALLOW_REFRESH_TOKEN_AUTH"
+      - "ALLOW_USER_PASSWORD_AUTH"
+      - "ALLOW_USER_SRP_AUTH"
+      PreventUserExistenceErrors: "ENABLED"
+      SupportedIdentityProviders: 
+      - "COGNITO"
+      CallbackURLs: !Ref CognitoCallbackURLs
+      LogoutURLs: !Ref CognitoLogoutURLs
+      AllowedOAuthFlows: 
+      - "code"
+      AllowedOAuthScopes: 
+      - "email"
+      - "openid"
+      - "phone"
+      AllowedOAuthFlowsUserPoolClient: true
+      IdTokenValidity: 60
+      AccessTokenValidity: 60
+      TokenValidityUnits: 
+        AccessToken: "minutes"
+        IdToken: "minutes"
+        RefreshToken: "days"
+
+  CognitoUserPoolDomain:
+    Type: "AWS::Cognito::UserPoolDomain"
+    Properties:
+      Domain: !Ref CognitoDomainName
+      UserPoolId: !Ref CognitoUserPool
+
+  ValidateTokenLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "validateToken"
+      Handler: "validateToken.lambda_handler"
+      Architectures: 
+      - "x86_64"
+      Code: 
+        S3Bucket: !Ref S3AssetBucket
+        S3Key: !Ref ValidateTokenLambdaS3Key
+      MemorySize: 128
+      Role: !Ref LabRoleArn
+      Runtime: "python3.12"
+      Timeout: 3
+      Environment:
+        Variables:
+          COGNITO_USERPOOL_ID: !Ref CognitoUserPool # Cognito User Pool Id referenced 
+          COGNITO_APP_CLIENT_ID: !Ref CognitoUserPoolClient #
+      Layers: 
+      - !Ref LambdaLayer
+      EphemeralStorage: 
+        Size: 512
+
+  GetSecurityQuestionsLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "getSecurityQuestions"
+      Handler: "getSecurityQuestions.lambda_handler"
+      Architectures: 
+      - "x86_64"
+      Code: 
+        S3Bucket: !Ref S3AssetBucket
+        S3Key: !Ref GetSecurityQuestionsLambdaS3Key
+      MemorySize: 128
+      Role: !Ref LabRoleArn
+      Runtime: "python3.12"
+      Environment:
+        Variables:
+          DYANAMODB_TABLE_NAME: !Ref DynamoDBTableName
+      Timeout: 15
+      TracingConfig: 
+        Mode: "PassThrough"
+      EphemeralStorage: 
+        Size: 512
+
+  ValidateCaesarCipherLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Description: ""
+      FunctionName: "validateCaesarCipher"
+      Handler: "validateCaesarCipher.lambda_handler"
+      Architectures: 
+      - "x86_64"
+      Code: 
+        S3Bucket: !Ref S3AssetBucket
+        S3Key: !Ref ValidateCaesarCipherLambdaS3Key
+      MemorySize: 128
+      Role: !Ref LabRoleArn
+      Runtime: "python3.12"
+      Environment:
+        Variables:
+          DYANAMODB_TABLE_NAME: !Ref DynamoDBTableName
+          SNS_TOPIC_ARN: !Ref SNSTopicARN
+      Timeout: 3
+      TracingConfig: 
+        Mode: "PassThrough"
+      EphemeralStorage: 
+        Size: 512
+
+  GenerateCaesarCipherLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Description: ""
+      FunctionName: "generateCaesarCipher"
+      Handler: "generateCaesarCipher.lambda_handler"
+      Architectures: 
+      - "x86_64"
+      Code: 
+        S3Bucket: !Ref S3AssetBucket
+        S3Key: !Ref GenerateCaesarCipherLambdaS3Key
+      MemorySize: 128
+      Role: !Ref LabRoleArn
+      Runtime: "python3.12"
+      Timeout: 3
+      EphemeralStorage: 
+        Size: 512
+
+  VerifySecurityQuestionsLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "verifySecurityQuestions"
+      Handler: "validateSecurityQuestions.lambda_handler"
+      Architectures: 
+      - "x86_64"
+      Code: 
+        S3Bucket: !Ref S3AssetBucket
+        S3Key: !Ref VerifySecurityQuestionsS3Key 
+      MemorySize: 128
+      Role: !Ref LabRoleArn
+      Runtime: "python3.12"
+      Timeout: 10
+      EphemeralStorage: 
+        Size: 512
+
+  UserRegistrationLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "userRegistration"
+      Handler: "userRegistration.lambda_handler"
+      Architectures: 
+      - "x86_64"
+      Code: 
+        S3Bucket: !Ref S3AssetBucket
+        S3Key: !Ref UserRegistrationS3Key
+      MemorySize: 128
+      Environment:
+        Variables:
+          DYANAMODB_TABLE_NAME: !Ref DynamoDBTableName
+          SNS_TOPIC_ARN: !Ref SNSTopicARN
+      Role: !Ref LabRoleArn
+      Runtime: "python3.12"
+      Timeout: 3
+      EphemeralStorage: 
+        Size: 512
+
+  ConfirmUserLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "confirmUser"
+      Handler: "cognitoUserConfirmation.lambda_handler"
+      Architectures: 
+      - "x86_64"
+      Code: 
+        S3Bucket: !Ref S3AssetBucket
+        S3Key: !Ref ConfirmUserS3Key
+      MemorySize: 128
+      Role: !Ref LabRoleArn
+      Runtime: "python3.12"
+      Environment:
+        Variables:
+          COGNITO_USERPOOL_ID: !Ref CognitoUserPool # Cognito User Pool Id referenced 
+      Timeout: 3
+      EphemeralStorage: 
+        Size: 512
+
+  ValidateCaesarCipherLambdaPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunctionUrl"
+      FunctionName: !GetAtt ValidateCaesarCipherLambda.Arn
+      Principal: "*"
+      FunctionUrlAuthType: 'NONE'
+
+  GetSecurityQuestionLambdaPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunctionUrl"
+      FunctionName: !GetAtt GetSecurityQuestionsLambda.Arn
+      Principal: "*"
+      FunctionUrlAuthType: 'NONE'
+
+  ValidateTokenLambdaPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunctionUrl"
+      FunctionName: !GetAtt ValidateTokenLambda.Arn
+      Principal: "*"
+      FunctionUrlAuthType: 'NONE'
+
+  ConfirmUserLambdaPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunctionUrl"
+      FunctionName: !GetAtt ConfirmUserLambda.Arn
+      Principal: "*"
+      FunctionUrlAuthType: 'NONE'
+
+  VerifySecurityQuestionsLambdaPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunctionUrl"
+      FunctionName: !GetAtt VerifySecurityQuestionsLambda.Arn
+      Principal: "*"
+      FunctionUrlAuthType: 'NONE'
+
+  GenerateCaesarCipherLambdaPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunctionUrl"
+      FunctionName: !GetAtt GenerateCaesarCipherLambda.Arn
+      Principal: "*"
+      FunctionUrlAuthType: 'NONE'
+
+  UserRegistrationLambdaPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunctionUrl"
+      FunctionName: !GetAtt UserRegistrationLambda.Arn
+      Principal: "*"
+      FunctionUrlAuthType: 'NONE'
+
+  ValidateCaesarCipherLambdaUrl:
+    Type: "AWS::Lambda::Url"
+    Properties:
+      TargetFunctionArn: !GetAtt ValidateCaesarCipherLambda.Arn
+      AuthType: "NONE"
+      Cors: 
+        AllowCredentials: false
+        AllowHeaders: 
+        - "authorization"
+        - "content-type"
+        AllowMethods: 
+        - "POST"
+        AllowOrigins: 
+        - "*"
+
+  GetSecurityQuestionsLambdaUrl:
+    Type: "AWS::Lambda::Url"
+    Properties:
+      TargetFunctionArn: !GetAtt GetSecurityQuestionsLambda.Arn
+      AuthType: "NONE"
+      Cors: 
+        AllowCredentials: false
+        AllowHeaders: 
+        - "authorization"
+        - "content-type"
+        AllowMethods: 
+        - "GET"
+        AllowOrigins: 
+        - "*"
+
+  ValidateTokenLambdaUrl:
+    Type: "AWS::Lambda::Url"
+    Properties:
+      TargetFunctionArn: !GetAtt ValidateTokenLambda.Arn
+      AuthType: "NONE"
+      Cors: 
+        AllowOrigins: 
+        - "*"
+
+  GenerateCaesarCipherLambdaUrl:
+    Type: "AWS::Lambda::Url"
+    Properties:
+      TargetFunctionArn: !GetAtt GenerateCaesarCipherLambda.Arn
+      AuthType: "NONE"
+      Cors: 
+        AllowCredentials: false
+        AllowHeaders: 
+        - "authorization"
+        - "content-type"
+        AllowMethods: 
+        - "GET"
+        AllowOrigins: 
+        - "*"
+
+  VerifySecurityQuestionsLambdaUrl:
+    Type: "AWS::Lambda::Url"
+    Properties:
+      TargetFunctionArn: !GetAtt VerifySecurityQuestionsLambda.Arn
+      AuthType: "NONE"
+      Cors: 
+        AllowCredentials: false
+        AllowHeaders: 
+        - "authorization"
+        - "content-type"
+        AllowMethods: 
+        - "*"
+        AllowOrigins: 
+        - "*"
+
+  UserRegistrationLambdaUrl:
+    Type: "AWS::Lambda::Url"
+    Properties:
+      TargetFunctionArn: !GetAtt UserRegistrationLambda.Arn
+      AuthType: "NONE"
+      Cors: 
+        AllowCredentials: false
+        AllowHeaders: 
+        - "content-type"
+        AllowMethods: 
+        - "*"
+        AllowOrigins: 
+        - "*"
+
+  ConfirmUserLambdaUrl:
+    Type: "AWS::Lambda::Url"
+    Properties:
+      TargetFunctionArn: !GetAtt ConfirmUserLambda.Arn
+      AuthType: "NONE"
+      Cors: 
+        AllowCredentials: false
+        AllowHeaders: 
+        - "content-type"
+        AllowMethods: 
+        - "*"
+        AllowOrigins: 
+        - "*"
+
+  LambdaLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      CompatibleRuntimes:
+        - python3.12
+      Content:
+        S3Bucket: !Ref S3AssetBucket
+        S3Key: !Ref LambdaLayerS3Key
+      Description: Layer that includes jwt, requests and crypto packages in python
+      LayerName: python-jwt-requests-crypto-layer
+
+  DynamoDBTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      AttributeDefinitions: 
+      - 
+        AttributeName: "username"
+        AttributeType: "S"
+      TableName: "Users"
+      KeySchema: 
+      - 
+        AttributeName: "username"
+        KeyType: "HASH"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+
+
+Outputs:
+  ValidateCaesarCipherFunctionURL:
+    Description: Function URLs
+    Value: !GetAtt ValidateCaesarCipherLambdaUrl.FunctionUrl
+  GetSecurityQuestionsFunctionURL:
+    Description: Function URLs
+    Value: !GetAtt GetSecurityQuestionsLambdaUrl.FunctionUrl
+  GenerateCaesarCipherFunctionURL:
+    Description: Function URLs
+    Value: !GetAtt GenerateCaesarCipherLambdaUrl.FunctionUrl
+  VerifySecurityQuestionsFunctionURL:
+    Description: Function URLs
+    Value: !GetAtt VerifySecurityQuestionsLambdaUrl.FunctionUrl
+  UserRegistrationFunctionURL:
+    Description: Function URLs
+    Value: !GetAtt UserRegistrationLambdaUrl.FunctionUrl
+  ConfirmUserLambdaUrlFunctionURL:
+    Description: Function URLs
+    Value: !GetAtt ConfirmUserLambdaUrl.FunctionUrl
+  CognitoUserPoolId:
+    Description: Cognito UserPool Id
+    Value: !Ref CognitoUserPool
+  CognitoClientId:
+    Description: Cognito Client Id
+    Value: !Ref CognitoUserPoolClient
+  CognitoDomain:
+    Description: Cognito Domain Name
+    Value: !Ref CognitoDomainName
